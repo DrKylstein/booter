@@ -8,8 +8,11 @@ pic.bin		:	pic.png
 booter.BIN	:	booter.asm
 	jwasm -bin -Fl=booter.lst booter.asm
 	
-clean: .SYMBOLIC
+clean	:	.SYMBOLIC
 	rm -f *.obj *.lst *.err *.BIN *.img *.bin
 
-run: .SYMBOLIC booter.img
+run	:	.SYMBOLIC booter.img
 	dosbox booter.img
+	
+install	:	.SYMBOLIC booter.img
+	sudo dd if=booter.img of=/dev/sdh

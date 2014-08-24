@@ -36,6 +36,7 @@ start:
     mov bp,7c00h
     mov sp,7c00h
     sti
+        
 ;set video mode    
     mov ax,0004h
     int 10h
@@ -44,8 +45,13 @@ start:
     mov bh,1
     mov bl,0
     int 10h
+
+    REPEAT 3
+;reset disk
+    mov ah,0
+    int 13h
 ;display image
-    mov ax,0b800h ;dest segment    
+    mov ax,0b800h ;dest segment
     mov es,ax
     mov bx,0000h ;dest offset
     mov ah,2 ;read sectors
@@ -55,6 +61,7 @@ start:
     mov dl,00h ; drive
     mov dh,00h ;head and track
     int 13h
+    ENDM
 end_of_program:
     jmp end_of_program
     
