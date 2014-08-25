@@ -1,0 +1,18 @@
+#! /usr/bin/python3
+
+import argparse
+import sys
+import io
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+    description='''Shifts bytestream right''')
+    parser.add_argument('amount', type=int, help='Number of bits to shift.')
+    args = parser.parse_args()
+    i = 0
+    while sys.stdin.buffer.readable():
+        bs = sys.stdin.buffer.read(1)
+        if len(bs) != 1: 
+            break
+        sys.stdout.buffer.write(bytes([bs[0] >> args.amount]));
+    sys.stdout.buffer.write(bytes([0xFF]));
