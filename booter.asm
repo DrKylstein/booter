@@ -3,13 +3,14 @@ timer_counter	= 42h
 timer_control	= 43h
 speaker_port	= 61h
 countdown = 1193180/16000
+BLOCK_SIZE = 4
 
     .8086
     .model tiny
 .code
     org 7c00h
-    jmp short start
-    nop
+    jmp start
+    org 7c03h
     db "CONHGECO" ;vendor name
     dw 512 ;bytes per sector
     db 1 ;sectors per cluster
@@ -38,8 +39,70 @@ countdown = 1193180/16000
         pop ax
         iret
     TimerHandler endp
+    ;;display image
+        ; mov ax,0b800h ;dest segment
+        ; mov es,ax
+        ; mov bx,0000h ;dest offset
+        ; mov ah,02 ;read sectors
+        ; mov al,32 ;# sectors
+        ; mov cl,02 ;sector
+        ; mov ch,00h;track
+        ; mov dl,00h;drive
+        ; mov dh,00h;head
+        ; int 13h
+    ReadSectors proc
+    ;I think it goes like this:
+    ;after 18 sectors, the head switches
+    ;after 36 the track advances
+    ;sectors are 1 based, all the others are 0 based
+        push ax ;al contains number of sectors
+        mov dx,0
+        mov ax,cx
+        mov cx,18
+        div cx
+        mov ch,al ;track = cluster/18
+        mov dh,ch
+        and dh,1 ;head = cluster/18 % 1
+        shr ch,1 ;track = cluster/18/2 = cluster/36
+        mov cl,dl
+        inc cl ;sector = (cluster%18) + 1
+        pop ax ;retrieve input ax, al = cluster count
+        mov ah,02h ;mode = read sectors
+        mov dl,0 ;drive number
+        int 13h
+        ret
+    ReadSectors endp
     
-    start:
+    SoftReadSectors proc
+        push bp
+        mov bp,sp
+    check:
+        cmp word ptr [bp+8],0
+        jne read
+        pop bp
+        ret
+    ;[bp+8] ;# clusters
+    read:
+        REPEAT 3
+    ;reset disk
+        mov ah,00h
+        int 13h
+    ;display image
+        mov ax,[bp+4] ;dest segment
+        mov es,ax
+        mov bx,[bp+6] ;dest offset
+        mov ax,BLOCK_SIZE ;# clusters
+        mov cx,[bp+10] ;start cluster
+        call ReadSectors
+        ENDM
+        
+        sub word ptr [bp+8],BLOCK_SIZE
+        add word ptr [bp+10],BLOCK_SIZE
+        add word ptr [bp+4],BLOCK_SIZE*512/16
+        jmp check
+    SoftReadSectors endp
+    
+    start proc far
         cli
         mov ax,cs
         mov ds,ax
@@ -72,65 +135,30 @@ countdown = 1193180/16000
         mov bh,1
         mov bl,0
         int 10h
-
-        REPEAT 3
-    ;reset disk
-        mov ah,0
-        int 13h
-    ;display image
-        mov ax,0b800h ;dest segment
-        mov es,ax
-        mov bx,0000h ;dest offset
-        mov ah,02 ;read sectors
-        mov al,32 ;# sectors
-        mov cl,02 ;sector
-        mov ch,00h;track
-        mov dl,00h;drive
-        mov dh,00h;head
-        int 13h
-        ENDM
         
-        REPEAT 3
-        mov ah,0
-        int 13h
-        mov ax,1000h ;dest segment
-        mov es,ax
-        mov bx,0000h;dest offset
-        mov ah,02h  ;read sectors
-        mov al,36;# sectors
-        mov cl, 1;sector
-        mov ch, 1;track
-        mov dl, 0;drive
-        mov dh, 0;head
-        int 13h
-        ENDM
+        ;load image
+        mov ax,1 ;start sector
+        push ax
+        mov ax,32 ;number of sectors
+        push ax
+        mov ax,0000h ;offset
+        push ax
+        mov ax,0b800h ;segment
+        push ax
+        call SoftReadSectors
+        add sp,8
         
-        ; mov al,ah
-        ; mov ah,0eh
-        ; mov bh,0
-        ; mov bl,2
-        ; int 10h
-        
-        REPEAT 3
-        mov ah,0
-        int 13h
-        mov ax,1000h ;dest segment
-        mov es,ax
-        mov bx,4800h;dest offset
-        mov ah,02h  ;read sectors
-        mov al,37;# sectors
-        mov cl, 1;sector
-        mov ch, 2;track
-        mov dl, 0;drive
-        mov dh, 0;head
-        int 13h
-        ENDM
-        
-        ; mov al,ah
-        ; mov ah,0eh
-        ; mov bh,0
-        ; mov bl,2
-        ; int 10h
+        ;load music
+        mov ax,34 ;start sector
+        push ax
+        mov ax,448;438;73 ;number of sectors
+        push ax
+        mov ax,0000h ;offset
+        push ax
+        mov ax,1000h ;segment
+        push ax
+        call SoftReadSectors
+        add sp,8
         
         ; Set timer 0 up with the specified playback frequency
         mov al,36h
@@ -140,11 +168,11 @@ countdown = 1193180/16000
         out timer_data,al
         mov al,ch
         out timer_data,al
-                
+    music_start:
         mov ax,1000h
         mov ds,ax
         xor bx,bx
-    end_of_program:
+    play_music:
         hlt
         mov al, [bx]
         out	timer_counter,al
@@ -152,12 +180,18 @@ countdown = 1193180/16000
         out timer_counter,al
         
         inc bx
-        cmp [bx], 0ffh
-        jne continue
+        cmp bx,16
+        jne nowrap
+        mov ax,ds
+        inc ax
+        mov ds,ax
         xor bx,bx
-    continue:
-        jmp end_of_program
+    nowrap:
+        cmp byte ptr [bx], 0ffh
+        jne play_music
+        jmp music_start
 
         org 7dfeh
         dw 55aah ; boot sector signature
+    start endp
     end start

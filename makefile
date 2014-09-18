@@ -2,7 +2,7 @@ booter.img	:	booter.BIN pic.bin sound.bin makefile
 	cat booter.BIN pic.bin sound.bin > booter.img 
 	truncate -s 1474560 booter.img
 
-sound.bin   :   sound.raw makefile
+sound.bin   :   sound.raw makefile pwmsound
     ./pwmsound 2 < sound.raw > sound.bin
 
 pic.bin		:	pic.png makefile
