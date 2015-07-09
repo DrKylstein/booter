@@ -3,7 +3,7 @@ timer_counter	= 42h
 timer_control	= 43h
 speaker_port	= 61h
 countdown = 1193180/16000
-BLOCK_SIZE = 4
+BLOCK_SIZE = 1
 
     .8086
     .model tiny
@@ -13,7 +13,7 @@ BLOCK_SIZE = 4
     org 7c03h
     db "CONHGECO" ;vendor name
     dw 512 ;bytes per sector
-    db 1 ;sectors per cluster
+    db 1 ;sectors per logical sector
     dw 33 ;reserved sectors
     db 2 ;FAT copies
     dw 224 ;root directory entries
@@ -39,77 +39,80 @@ BLOCK_SIZE = 4
         pop ax
         iret
     TimerHandler endp
-    ;;display image
-        ; mov ax,0b800h ;dest segment
-        ; mov es,ax
-        ; mov bx,0000h ;dest offset
-        ; mov ah,02 ;read sectors
-        ; mov al,32 ;# sectors
-        ; mov cl,02 ;sector
-        ; mov ch,00h;track
-        ; mov dl,00h;drive
-        ; mov dh,00h;head
-        ; int 13h
+    
     ReadSectors proc
-    ;I think it goes like this:
-    ;after 18 sectors, the head switches
-    ;after 36 the track advances
-    ;sectors are 1 based, all the others are 0 based
+        push bp
+        mov bp,sp
+        xor ax,ax
+        push ax ; retry count bp+0
+        
+        ;reset disk
+        mov ah,0
+        mov dl,0
+        int 13h
+        
+    read:
+    ;set up read
+        mov ax,[bp+4] ;dest segment
+        mov es,ax
+        mov bx,[bp+6] ;dest offset
+        mov ax,BLOCK_SIZE ;# logical sectors
+        mov cx,[bp+10] ;start logical sector
+        
+     ;do read   
         push ax ;al contains number of sectors
         mov dx,0
         mov ax,cx
         mov cx,18
         div cx
-        mov ch,al ;track = cluster/18
+        mov ch,al ;track = logical sector/18
         mov dh,ch
-        and dh,1 ;head = cluster/18 % 1
-        shr ch,1 ;track = cluster/18/2 = cluster/36
+        and dh,1 ;head = logical sector/18 % 1
+        shr ch,1 ;track = logical sector/18/2 = logical sector/36
         mov cl,dl
-        inc cl ;sector = (cluster%18) + 1
-        pop ax ;retrieve input ax, al = cluster count
+        inc cl ;sector = (logical sector%18) + 1
+        pop ax ;retrieve input ax, al = logical sector count
         mov ah,02h ;mode = read sectors
         mov dl,0 ;drive number
         int 13h
-        ret
-    ReadSectors endp
-    
-    SoftReadSectors proc
-        push bp
-        mov bp,sp
-    check:
-        cmp word ptr [bp+8],0
-        jne read
-        pop bp
-        ret
-    ;[bp+8] ;# clusters
-    read:
-        REPEAT 3
-    ;reset disk
-        mov ah,00h
+        
+    ;retry
+        jnc correct
+        cmp word ptr [bp+0],1
+        jge correct
+        inc word ptr [bp+0]
+        ;reset disk
+        mov ah,0
+        mov dl,0
         int 13h
-    ;display image
-        mov ax,[bp+4] ;dest segment
-        mov es,ax
-        mov bx,[bp+6] ;dest offset
-        mov ax,BLOCK_SIZE ;# clusters
-        mov cx,[bp+10] ;start cluster
-        call ReadSectors
-        ENDM
+        jmp read
+        correct:
         
         sub word ptr [bp+8],BLOCK_SIZE
         add word ptr [bp+10],BLOCK_SIZE
         add word ptr [bp+4],BLOCK_SIZE*512/16
-        jmp check
-    SoftReadSectors endp
+        cmp word ptr [bp+8],0
+        jne read
+        
+        inc sp
+        inc sp
+        pop bp
+        ret
+    ReadSectors endp
     
     start proc far
         cli
+        ;attempted to force segment, failed in DosBox
+        ;xor ax,ax
+        ;mov cs,ax
         mov ax,cs
         mov ds,ax
+        ;grow stack from before the code down to 0000:0000
         mov ss,ax
-        mov bp,7c00h
+        mov bp,7c00h 
         mov sp,7c00h
         
+        ;change timer interrupt vector
         xor ax,ax
         mov es,ax
         mov bx,8*4
@@ -145,7 +148,7 @@ BLOCK_SIZE = 4
         push ax
         mov ax,0b800h ;segment
         push ax
-        call SoftReadSectors
+        call ReadSectors
         add sp,8
         
         ;load music
@@ -157,7 +160,7 @@ BLOCK_SIZE = 4
         push ax
         mov ax,1000h ;segment
         push ax
-        call SoftReadSectors
+        call ReadSectors
         add sp,8
         
         ; Set timer 0 up with the specified playback frequency

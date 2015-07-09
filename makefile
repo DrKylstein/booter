@@ -1,3 +1,5 @@
+#Watcom make
+
 booter.img	:	booter.BIN pic.bin sound.bin makefile
 	cat booter.BIN pic.bin sound.bin > booter.img 
 	truncate -s 1474560 booter.img
